@@ -1,0 +1,45 @@
+\contentsline {section}{\numberline {1}Introduction}{2}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Files Provided}{2}{subsection.1.1}%
+\contentsline {section}{\numberline {2}Function-by-Function Walkthrough}{2}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Shared Primitives (both \texttt {lkf\_asm.s} and \texttt {ekf\_asm.s})}{2}{subsection.2.1}%
+\contentsline {subsubsection}{\numberline {2.1.1}\texttt {\bfseries mat\_add\_asm} --- Element-wise Addition}{2}{subsubsection.2.1.1}%
+\contentsline {subsubsection}{\numberline {2.1.2}\texttt {\bfseries mat\_sub\_asm} --- Element-wise Subtraction}{3}{subsubsection.2.1.2}%
+\contentsline {subsubsection}{\numberline {2.1.3}\texttt {\bfseries mat\_scale\_asm} --- In-place Scalar Multiply}{3}{subsubsection.2.1.3}%
+\contentsline {subsubsection}{\numberline {2.1.4}\texttt {\bfseries mat\_dot\_asm} --- Dot Product}{3}{subsubsection.2.1.4}%
+\contentsline {subsubsection}{\numberline {2.1.5}\texttt {\bfseries vec\_axpy\_asm} --- AXPY Operation}{4}{subsubsection.2.1.5}%
+\contentsline {subsubsection}{\numberline {2.1.6}\texttt {\bfseries predict\_x\_asm} --- Constant-Jerk State Propagation}{4}{subsubsection.2.1.6}%
+\contentsline {subsection}{\numberline {2.2}LKF-only: \texttt {lkf\_asm.s}}{5}{subsection.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}\texttt {\bfseries update\_x\_asm} --- Kalman Gain Correction}{5}{subsubsection.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}\texttt {\bfseries covar\_diag\_update\_asm} --- Diagonal Covariance Scaling}{5}{subsubsection.2.2.2}%
+\contentsline {subsection}{\numberline {2.3}EKF-only: \texttt {ekf\_asm.s}}{5}{subsection.2.3}%
+\contentsline {subsubsection}{\numberline {2.3.1}\texttt {\bfseries atan\_poly\_asm} --- 9-Term Minimax Arctangent Polynomial}{5}{subsubsection.2.3.1}%
+\contentsline {subsubsection}{\numberline {2.3.2}\texttt {\bfseries atan2\_asm} --- Full Four-Quadrant atan2}{6}{subsubsection.2.3.2}%
+\contentsline {subsubsection}{\numberline {2.3.3}\texttt {\bfseries wrap\_angle\_asm} --- Angle Wrapping to $(-\pi , \pi ]$}{7}{subsubsection.2.3.3}%
+\contentsline {subsubsection}{\numberline {2.3.4}\texttt {\bfseries h\_func\_asm} --- Cartesian to Spherical Measurement}{7}{subsubsection.2.3.4}%
+\contentsline {subsubsection}{\numberline {2.3.5}\texttt {\bfseries build\_jblock\_asm} --- 3$\times $12 Measurement Jacobian Block}{7}{subsubsection.2.3.5}%
+\contentsline {subsubsection}{\numberline {2.3.6}\texttt {\bfseries inv3x3\_asm} --- Exact 3$\times $3 Cramer Inversion}{7}{subsubsection.2.3.6}%
+\contentsline {subsubsection}{\numberline {2.3.7}\texttt {\bfseries ekf\_update\_x\_asm} --- EKF State Correction}{8}{subsubsection.2.3.7}%
+\contentsline {section}{\numberline {3}Register Allocation}{8}{section.3}%
+\contentsline {subsection}{\numberline {3.1}RISC-V LP64D ABI Recap}{8}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Per-Function Register Table}{8}{subsection.3.2}%
+\contentsline {section}{\numberline {4}Numerical Verification}{10}{section.4}%
+\contentsline {subsection}{\numberline {4.1}atan2 Polynomial Accuracy}{10}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Table A: Average Error per Joint}{11}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Table B: Average Error per State Component}{11}{subsection.4.3}%
+\contentsline {section}{\numberline {5}Plots}{12}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Milestone-3 Kinematic Plots (Full State)}{12}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}EKF Kinematic Plots}{15}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Error Analysis (Absolute Error)}{17}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}LKF vs EKF Comparison}{18}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Per-Joint RMSE Summary}{19}{subsection.5.5}%
+\contentsline {subsection}{\numberline {5.6}EKF atan2 Approximation Accuracy}{20}{subsection.5.6}%
+\contentsline {subsection}{\numberline {5.7}Milestone-2 vs Milestone-3 Comparison (Optional)}{20}{subsection.5.7}%
+\contentsline {section}{\numberline {6}Memory Management and Stack Layout}{21}{section.6}%
+\contentsline {paragraph}{Stack frames.}{21}{section.6}%
+\contentsline {paragraph}{ABI compliance.}{21}{table.caption.23}%
+\contentsline {section}{\numberline {7}arctan2 Approximation}{21}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Polynomial Coefficients}{21}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Quadrant Extension}{22}{subsection.7.2}%
+\contentsline {section}{\numberline {8}Build Instructions}{22}{section.8}%
+\contentsline {section}{\numberline {9}Conclusion}{22}{section.9}%
+\contentsline {section}{\numberline {A}Coefficient Tables}{23}{appendix.A}%

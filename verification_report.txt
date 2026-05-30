@@ -1,0 +1,22 @@
+==========================================================================================
+  atan2 Polynomial Accuracy Check
+==========================================================================================
+  Max |atan_poly(x) - atan(x)| over [-1,1]: 1.359e-08
+  Status (threshold 1e-8): FAIL
+
+==========================================================================================
+  LKF Comparison
+  Milestone-2 : Milestone2/LKF_Output/LKF_Filtered_States.csv
+  Milestone-3 : LKF_Output/LKF_Filtered_States.csv
+==========================================================================================
+  [SKIP] Milestone-2 file not found: Milestone2/LKF_Output/LKF_Filtered_States.csv
+==========================================================================================
+  EKF Comparison
+  Milestone-2 : Milestone2/EKF_Output/EKF_Filtered_States.csv
+  Milestone-3 : EKF_Output/EKF_Filtered_States.csv
+==========================================================================================
+  [SKIP] Milestone-2 file not found: Milestone2/EKF_Output/EKF_Filtered_States.csv
+
+==========================================================================================
+  Verification complete.
+==========================================================================================

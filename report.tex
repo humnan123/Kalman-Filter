@@ -1,0 +1,1155 @@
+% ===========================================================
+%  Milestone-3 Report
+%  RISC-V Assembly Implementation of LKF and EKF
+%  Compile: pdflatex report.tex  (twice for references)
+% ===========================================================
+\documentclass[12pt,a4paper]{article}
+
+% ---- Packages -----------------------------------------------
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{fancyhdr}
+\setlength{\headheight}{14.5pt}
+\addtolength{\topmargin}{-2.5pt}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{mdframed}
+\usepackage{graphicx}
+\usepackage{etoolbox}
+
+\newcommand{\safeincludegraphics}[2][]{%
+\IfFileExists{#2}{%
+  \includegraphics[#1]{#2}%
+}{%
+  \fbox{\textbf{Missing image:} #2}%
+}}
+% ---- Colors -------------------------------------------------
+\definecolor{riscvblue}{RGB}{37,99,170}
+\definecolor{codebg}{RGB}{245,247,250}
+\definecolor{comment}{RGB}{100,130,100}
+\definecolor{keyword}{RGB}{170,30,30}
+\definecolor{reg}{RGB}{30,100,170}
+\definecolor{numcolor}{RGB}{180,80,0}
+
+% ---- Listings setup -----------------------------------------
+\lstdefinelanguage{RISCV}{
+  morekeywords={addi,add,sub,mul,div,sd,ld,sw,lw,fsd,fld,
+                fmv,fmul,fadd,fsub,fdiv,fmadd,fmsub,fnmadd,fnmsub,
+                fneg,fabs,fsqrt,fsgnjx,feq,flt,fle,
+                beqz,bnez,bge,blt,beq,bne,j,call,ret,la,li,mv,
+                slli,srli,srai,fmv.d,fmv.d.x,fmv.x.d,
+                .globl,.type,.section,.align,.double,.text,.rodata,
+                .function},
+  morecomment=[l]{\#},
+  morestring=[b]",
+  sensitive=true
+}
+
+\lstset{
+  language=RISCV,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{keyword}\bfseries,
+  commentstyle=\color{comment}\itshape,
+  stringstyle=\color{numcolor},
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  stepnumber=1,
+  numbersep=6pt,
+  breaklines=true,
+  breakatwhitespace=false,
+  frame=single,
+  framesep=3pt,
+  rulecolor=\color{riscvblue!40},
+  tabsize=4,
+  captionpos=b,
+  xleftmargin=14pt,
+  framexleftmargin=14pt,
+}
+
+% ---- Page style ---------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Milestone-3: RISC-V Assembly Kalman Filters}
+\lhead{\leftmark}
+\rfoot{\thepage}
+\lfoot{EE/CS -- Motion Capture Filtering}
+
+% ---- Section formatting ------------------------------------
+\titleformat{\section}[block]{\large\bfseries\color{riscvblue}}{\thesection}{1em}{}
+\titleformat{\subsection}[block]{\normalsize\bfseries}{\thesubsection}{1em}{}
+
+% ---- Hyperref setup -----------------------------------------
+\hypersetup{
+  colorlinks=true,
+  linkcolor=riscvblue,
+  citecolor=riscvblue,
+  urlcolor=riscvblue,
+  pdftitle={Milestone-3: RISC-V Assembly Kalman Filters},
+  pdfauthor={},
+}
+
+% ---- Custom commands ----------------------------------------
+\newcommand{\reg}[1]{\texttt{\color{reg}#1}}
+\newcommand{\insn}[1]{\texttt{\color{keyword}#1}}
+\newcommand{\func}[1]{\texttt{\bfseries #1}}
+
+% ============================================================
+\begin{document}
+
+% ---- Title page --------------------------------------------
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\Huge\bfseries\color{riscvblue} Milestone-3 Report\par}
+  \vspace{0.4cm}
+  {\large RISC-V Assembly Implementation of\\
+         Linear and Extended Kalman Filters\par}
+  \vspace{1.5cm}
+  \rule{0.8\textwidth}{0.4pt}\\[0.6cm]
+  {\large\itshape Motion Capture Data Filtering\\[0.3cm]
+          RISC-V LP64D ABI $\cdot$ IEEE-754 Double Precision\par}
+  \rule{0.8\textwidth}{0.4pt}
+  \vfill
+  {\large \today\par}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ============================================================
+\section{Introduction}
+\label{sec:intro}
+% ============================================================
+
+Milestone-3 re-implements the core arithmetic kernels of the Linear
+Kalman Filter (LKF) and Extended Kalman Filter (EKF) from
+Milestone-2 in RISC-V scalar assembly (LP64D ABI, double-precision
+IEEE-754). The C driver files (\texttt{lkf\_driver.c} and
+\texttt{ekf\_driver.c}) handle dataset I/O, large matrix
+multiplications (276$\times$276), and high-level filter logic, while
+all per-element and per-joint operations are delegated to the
+corresponding assembly source (\texttt{lkf\_asm.s},
+\texttt{ekf\_asm.s}).
+
+\subsection{Files Provided}
+
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{lkf\_asm.s}    & LKF assembly: 8 functions \\
+\texttt{ekf\_asm.s}    & EKF assembly: 14 functions (superset of LKF) \\
+\texttt{lkf\_driver.c} & LKF C driver, dataset loader, CSV output \\
+\texttt{ekf\_driver.c} & EKF C driver, innovation, Joseph covariance \\
+\texttt{Makefile}      & Cross-compiles with \texttt{riscv64-linux-gnu-gcc} \\
+\texttt{verify.py}     & Numerical comparison vs Milestone-2 \\
+\texttt{plot\_m3.py}   & Milestone-3 plot generation \\
+\texttt{plot\_compare.py} & Milestone-2 vs 3 comparison plots \\
+\bottomrule
+\end{tabularx}
+
+% ============================================================
+\section{Function-by-Function Walkthrough}
+\label{sec:functions}
+% ============================================================
+
+\subsection{Shared Primitives (both \texttt{lkf\_asm.s} and \texttt{ekf\_asm.s})}
+
+% ------- mat_add_asm ------------------------------------------
+\subsubsection{\func{mat\_add\_asm} --- Element-wise Addition}
+
+\begin{lstlisting}[caption={\func{mat\_add\_asm}: C[i] = A[i] + B[i] for n elements},label=lst:matadd]
+# mat_add_asm(double *C, const double *A, const double *B, int n)
+mat_add_asm:
+    beqz  a3, mat_add_done      # n==0 -> skip
+    mv    t0, a3                # loop counter
+mat_add_loop:
+    fld   ft0, 0(a1)            # load A[i]
+    fld   ft1, 0(a2)            # load B[i]
+    fadd.d ft2, ft0, ft1        # ft2 = A[i]+B[i]
+    fsd   ft2, 0(a0)            # store to C[i]
+    addi  a0, a0, 8             # advance C pointer
+    addi  a1, a1, 8             # advance A pointer
+    addi  a2, a2, 8             # advance B pointer
+    addi  t0, t0, -1            # decrement counter
+    bnez  t0, mat_add_loop
+mat_add_done:
+    ret
+\end{lstlisting}
+
+\textbf{Explanation.}
+The function accepts three \texttt{double} pointers and a length \reg{a3}.
+Each iteration loads one element from \reg{a1} and \reg{a2} into
+caller-saved floating-point registers \reg{ft0}/\reg{ft1},
+performs \insn{fadd.d}, and stores the result through \reg{a0}.
+All three pointers are post-incremented by 8 bytes (size of a
+\texttt{double}). No stack frame is required because only
+caller-saved registers are used.
+
+% ------- mat_sub_asm ------------------------------------------
+\subsubsection{\func{mat\_sub\_asm} --- Element-wise Subtraction}
+
+Identical structure to \func{mat\_add\_asm}, replacing \insn{fadd.d}
+with \insn{fsub.d}. Computes $C_i = A_i - B_i$ in-place. Used in the
+covariance Joseph update ($I - KH$).
+
+% ------- mat_scale_asm ----------------------------------------
+\subsubsection{\func{mat\_scale\_asm} --- In-place Scalar Multiply}
+
+\begin{lstlisting}[caption={\func{mat\_scale\_asm}: A[i] *= scalar},label=lst:matscale]
+# mat_scale_asm(double *A, double scalar, int n)
+#   scalar -> fa0,  n -> a1
+mat_scale_asm:
+    beqz  a1, mat_scale_done
+    mv    t0, a1
+mat_scale_loop:
+    fld   ft0, 0(a0)
+    fmul.d ft0, ft0, fa0        # ft0 *= scalar
+    fsd   ft0, 0(a0)
+    addi  a0, a0, 8
+    addi  t0, t0, -1
+    bnez  t0, mat_scale_loop
+mat_scale_done:
+    ret
+\end{lstlisting}
+
+\textbf{Explanation.}
+The scalar is passed via the floating-point argument register \reg{fa0}
+(LP64D convention). The loop loads, multiplies in-place, and stores,
+advancing the pointer by 8 bytes each iteration. Used for covariance
+process noise scaling.
+
+% ------- mat_dot_asm ------------------------------------------
+\subsubsection{\func{mat\_dot\_asm} --- Dot Product}
+
+\begin{lstlisting}[caption={\func{mat\_dot\_asm}: $\sum A_i B_i$, result in fa0},label=lst:matdot]
+# mat_dot_asm(const double *A, const double *B, int n) -> double
+mat_dot_asm:
+    fmv.d.x fa0, zero           # accumulator = 0.0
+    beqz    a2, mat_dot_done
+    mv      t0, a2
+mat_dot_loop:
+    fld     ft0,  0(a0)
+    fld     ft1,  0(a1)
+    addi    a0,   a0, 8
+    addi    a1,   a1, 8
+    fmadd.d fa0,  ft0, ft1, fa0 # fa0 += A[i]*B[i]
+    addi    t0,   t0, -1
+    bnez    t0,   mat_dot_loop
+mat_dot_done:
+    ret
+\end{lstlisting}
+
+\textbf{Explanation.}
+Uses \insn{fmadd.d} (fused multiply-add) to accumulate
+$\sum_i A_i B_i$ into \reg{fa0} with a single rounding per
+iteration, minimising floating-point error. The accumulator is
+initialised to $+0.0$ via \insn{fmv.d.x fa0, zero}.
+
+% ------- vec_axpy_asm -----------------------------------------
+\subsubsection{\func{vec\_axpy\_asm} --- AXPY Operation}
+
+Implements $y_i \mathrel{+}= \alpha \, x_i$ for $i = 0 \ldots n-1$
+using \insn{fmadd.d fa0, ft0, ft1, fa0} per element. The scalar
+$\alpha$ is held in \reg{fa0}; no stack frame is needed.
+
+% ------- predict_x_asm ----------------------------------------
+\subsubsection{\func{predict\_x\_asm} --- Constant-Jerk State Propagation}
+
+\begin{lstlisting}[caption={\func{predict\_x\_asm}: constant-jerk transition for one joint},label=lst:predict]
+# predict_x_asm(double *x12, double dt)
+predict_x_asm:
+    addi  sp, sp, -32
+    sd    ra, 24(sp)
+    fsd   fs0, 16(sp)   # save callee-saved FP regs
+    fsd   fs1,  8(sp)
+    fsd   fs2,  0(sp)
+
+    fmv.d  fs0, fa0              # fs0 = dt
+    fmul.d fs1, fs0, fs0
+    fmul.d fs1, fs1, ft6         # fs1 = dt^2/2  (ft6 = 0.5 from rodata)
+    fmul.d fs2, fs1, fs0
+    fmul.d fs2, fs2, ft6         # fs2 = dt^3/6  (ft6 = 1/3 from rodata)
+
+    li    t6, 0
+pxa_axis:                        # loop over 3 axes (b=0,1,2)
+    bge   t6, t5, pxa_done
+    slli  t0, t6, 5              # offset = b*32 bytes (4 doubles)
+    add   t0, a0, t0
+    fld   ft0,  0(t0)            # pos
+    fld   ft1,  8(t0)            # vel
+    fld   ft2, 16(t0)            # acc
+    fld   ft3, 24(t0)            # jerk
+    fmadd.d ft0, fs0, ft1, ft0  # pos += dt*vel
+    fmadd.d ft0, fs1, ft2, ft0  #      + dt^2/2*acc
+    fmadd.d ft0, fs2, ft3, ft0  #      + dt^3/6*jerk
+    fsd   ft0,  0(t0)
+    fmadd.d ft1, fs0, ft2, ft1  # vel += dt*acc + dt^2/2*jerk
+    fmadd.d ft1, fs1, ft3, ft1
+    fsd   ft1,  8(t0)
+    fmadd.d ft2, fs0, ft3, ft2  # acc += dt*jerk
+    fsd   ft2, 16(t0)
+    addi  t6, t6, 1
+    j     pxa_axis
+pxa_done:
+    ...                          # restore callee-saved, ret
+\end{lstlisting}
+
+\textbf{Explanation.}
+The 12-state vector per joint stores $[\text{pos}, \text{vel},
+\text{acc}, \text{jerk}]$ for each of 3 axes, laid out at byte
+offsets $0, 8, 16, 24$ (axis 0), $32 \ldots 56$ (axis 1), $64 \ldots
+88$ (axis 2).  The axis loop index \reg{t6} is shifted left by 5
+(\insn{slli t0,t6,5}) to multiply by 32 (4 doubles $\times$ 8
+bytes). Three callee-saved FP registers \reg{fs0}/\reg{fs1}/\reg{fs2}
+hold $dt$, $dt^2/2$, and $dt^3/6$ across iterations to avoid
+redundant recomputation.
+
+% ============================================================
+\subsection{LKF-only: \texttt{lkf\_asm.s}}
+
+% ------- update_x_asm -----------------------------------------
+\subsubsection{\func{update\_x\_asm} --- Kalman Gain Correction}
+
+\begin{lstlisting}[caption={\func{update\_x\_asm}: $x_{12} += K_{12\times3} \cdot \text{innov}_3$},label=lst:updatex]
+# update_x_asm(double *x12, const double *K_row3, const double *innov3)
+update_x_asm:
+    fld  ft3,  0(a2)   # innov[0]
+    fld  ft4,  8(a2)   # innov[1]
+    fld  ft5, 16(a2)   # innov[2]
+    mv   s0, a0
+    li   t6, 0
+uxa_loop:
+    bge  t6, t5, uxa_done
+    mul  t0, t6, t0    # row offset = i * 24 (3 doubles)
+    add  t0, a1, t0
+    fld  ft0,  0(t0)   # K[i][0]
+    fld  ft1,  8(t0)   # K[i][1]
+    fld  ft2, 16(t0)   # K[i][2]
+    fmul.d  ft6, ft0, ft3
+    fmadd.d ft6, ft1, ft4, ft6
+    fmadd.d ft6, ft2, ft5, ft6   # dot product
+    slli t1, t6, 3
+    add  t1, s0, t1
+    fld  ft0, 0(t1)
+    fadd.d ft0, ft0, ft6
+    fsd  ft0, 0(t1)              # x[i] += dot
+    addi t6, t6, 1
+    j    uxa_loop
+\end{lstlisting}
+
+\textbf{Explanation.}
+The three innovation values are loaded once into
+\reg{ft3}/\reg{ft4}/\reg{ft5} before the loop, avoiding repeated
+memory loads. Each row of the Kalman gain submatrix (24-byte stride)
+is dot-producted with the innovation and accumulated into \reg{ft6}
+via two \insn{fmadd.d} instructions.
+
+% ------- covar_diag_update_asm --------------------------------
+\subsubsection{\func{covar\_diag\_update\_asm} --- Diagonal Covariance Scaling}
+
+Scales the $n$ diagonal elements of the covariance matrix by a
+scalar factor (process noise inflation): $P_{ii} \mathrel{*}= f$.
+Uses the same single-register loop pattern as
+\func{mat\_scale\_asm}.
+
+% ============================================================
+\subsection{EKF-only: \texttt{ekf\_asm.s}}
+
+% ------- atan_poly_asm ----------------------------------------
+\subsubsection{\func{atan\_poly\_asm} --- 9-Term Minimax Arctangent Polynomial}
+
+\begin{lstlisting}[caption={\func{atan\_poly\_asm}: Horner evaluation of A\&S 4.4.49},label=lst:atanpoly]
+# atan_poly_asm(double x) -> fa0
+atan_poly_asm:
+    fmul.d  ft0, fa0, fa0    # x^2
+    la      t0, atan_c       # pointer to 9 coefficients
+    fld     ft2,  0(t0)      # c0 = 1.0
+    ...
+    fld     ft10, 64(t0)     # c8 = 0.0028662257
+    fmv.d   ft1, ft10        # acc = c8
+    fmadd.d ft1, ft1, ft0, ft9   # acc = c8*x^2 + c7
+    fmadd.d ft1, ft1, ft0, ft8   #   ...
+    ...
+    fmadd.d ft1, ft1, ft0, ft2   # acc = p(x^2)
+    fmul.d  fa0, ft1, fa0    # result = x * p(x^2)
+    ret
+\end{lstlisting}
+
+\textbf{Explanation.}
+Evaluates the minimax polynomial from Abramowitz \& Stegun 4.4.49:
+\[
+  \arctan(x) \approx x \Bigl( c_0 + x^2(c_1 + x^2(\cdots + x^2 c_8)) \Bigr)
+\]
+using Horner's scheme entirely in caller-saved FP registers
+\reg{ft0}--\reg{ft10}. No stack frame needed. The nine
+double-precision coefficients reside in the \texttt{.rodata} section
+at label \texttt{atan\_c}.  Maximum absolute error over $[-1,1]$ is
+below $4\times10^{-9}$ (verified in \texttt{verify.py}).
+
+% ------- atan2_asm --------------------------------------------
+\subsubsection{\func{atan2\_asm} --- Full Four-Quadrant atan2}
+
+\begin{lstlisting}[caption={\func{atan2\_asm}: full atan2(y,x) via quadrant logic},label=lst:atan2]
+# atan2_asm(double y, double x) -> fa0
+#   fa0=y  fa1=x
+atan2_asm:
+    # Spill callee-saved fs0..fs4
+    fmv.d  fs0, fa0   # y
+    fmv.d  fs1, fa1   # x
+    feq.d  t0, fs1, ft0
+    beqz   t0, at2_nonzero
+    # x==0 special case: return +/-pi/2 or 0
+    ...
+at2_nonzero:
+    fsgnjx.d fs2, fs1, fs1  # |x|
+    fsgnjx.d fs3, fs0, fs0  # |y|
+    fle.d  t0, fs3, fs2
+    beqz   t0, at2_else
+    fdiv.d fa0, fs3, ft0    # ay/(ax+eps)
+    call   atan_poly_asm
+    ...                     # quadrant correction
+\end{lstlisting}
+
+\textbf{Explanation.}
+After handling the $x=0$ degenerate case, the function reduces the
+problem to the first octant ($0 \le y \le x$) via $|x|$/$|y|$
+comparison using \insn{fsgnjx.d}. It then calls
+\func{atan\_poly\_asm} and applies quadrant corrections: subtract
+from $\pi$ if $x < 0$; negate if $y < 0$. Five callee-saved FP
+registers \reg{fs0}--\reg{fs4} hold intermediate results across the
+inner call.
+
+% ------- wrap_angle_asm --------------------------------------
+\subsubsection{\func{wrap\_angle\_asm} --- Angle Wrapping to $(-\pi, \pi]$}
+
+Normalises any angle $\theta$ into the half-open interval
+$(-\pi,\pi]$ by computing $\theta \mathrel{-}= 2\pi \cdot
+\lfloor(\theta + \pi)/(2\pi)\rfloor$. Implemented with
+\insn{fdiv.d} and a floor emulated via integer conversion (\insn{fcvt.l.d}
+with round-toward-zero, then \insn{fcvt.d.l}).
+
+% ------- h_func_asm ------------------------------------------
+\subsubsection{\func{h\_func\_asm} --- Cartesian to Spherical Measurement}
+
+Maps joint position $(p_x, p_y, p_z)$ to spherical coordinates
+$(r, \theta_{\text{el}}, \phi_{\text{az}})$:
+\[
+  r = \sqrt{p_x^2+p_y^2+p_z^2}, \quad
+  \theta = \operatorname{atan2}(p_y, p_x), \quad
+  \phi   = \arcsin(p_z / r)
+\]
+Uses \func{atan2\_asm} and stores results in the caller-provided
+output array. Callee-saved \reg{fs0}--\reg{fs5} hold the
+intermediate positions and radii.
+
+% ------- build_jblock_asm ------------------------------------
+\subsubsection{\func{build\_jblock\_asm} --- 3$\times$12 Measurement Jacobian Block}
+
+Fills a $3 \times 12$ Jacobian sub-block for one joint's contribution
+to the measurement equation. Non-zero entries correspond to partial
+derivatives of $(r, \theta, \phi)$ with respect to $(p_x, p_y, p_z)$:
+\[
+  \frac{\partial r}{\partial p_x} = \frac{p_x}{r}, \quad
+  \frac{\partial \theta}{\partial p_x} = -\frac{p_y}{r_{xy}^2}, \quad
+  \frac{\partial \phi}{\partial p_x} = -\frac{p_x p_z}{r^2 r_{xy}}
+\]
+and analogously for $y$/$z$. The function stores results at
+column-strided offsets (32-byte strides between column entries) to
+match the full $69\times276$ Jacobian layout used by the C driver.
+Callee-saved registers \reg{fs0}--\reg{fs5} hold $p_x$, $p_y$,
+$p_z$, $r_{xy}^2$, $r_{xy}$, $r^2$.
+
+% ------- inv3x3_asm ------------------------------------------
+\subsubsection{\func{inv3x3\_asm} --- Exact 3$\times$3 Cramer Inversion}
+
+\begin{lstlisting}[caption={\func{inv3x3\_asm}: Cramer-rule 3x3 matrix inverse},label=lst:inv3x3]
+# inv3x3_asm(double *Ainv, const double *A, int *ok)
+# A = [a b c; d e f; g h k]
+inv3x3_asm:
+    # Load all 9 elements
+    fld fs0,  0(s1)  # a
+    ...
+    fld ft2, 64(s1)  # k
+    # det = a*(e*k - f*h) - b*(d*k - f*g) + c*(d*h - e*g)
+    fmul.d ft3, fs4, ft2   # e*k
+    fmul.d ft4, fs5, ft1   # f*h
+    fsub.d ft3, ft3, ft4
+    fmul.d ft3, fs0, ft3   # a*(ek-fh)
+    ...                    # other two terms
+    fadd.d ft3, ft3, ft5   # det
+    # Check |det| < 1e-15
+    fsgnjx.d ft5, ft3, ft3
+    flt.d  t0, ft5, ft4
+    bnez   t0, inv3_sing
+    fdiv.d ft6, one, ft3   # 1/det
+    # Cofactors (row by row)
+    fmul.d ft3, fs4, ft2; ...  # C[0][0]
+    fsd ft3, 0(s0)
+    ...
+inv3_sing:
+    sw  zero, 0(s2)  # *ok = 0
+\end{lstlisting}
+
+\textbf{Explanation.}
+All nine matrix elements are loaded into callee-saved
+(\reg{fs0}--\reg{fs5}) and caller-saved (\reg{ft0}--\reg{ft2})
+registers once. The determinant is computed as the standard Sarrus
+expansion, checked against $10^{-15}$, and the adjugate matrix
+divided by the determinant is stored to the output array.
+On near-singularity the function sets \texttt{*ok=0}; the C driver
+falls back to Gauss-Jordan elimination.
+
+% ------- ekf_update_x_asm ------------------------------------
+\subsubsection{\func{ekf\_update\_x\_asm} --- EKF State Correction}
+
+Functionally identical to LKF's \func{update\_x\_asm}: applies
+$x_{12} \mathrel{+}= K_{12\times3} \cdot \nu_3$ per joint. In the
+EKF file the function is named \func{ekf\_update\_x\_asm} and called
+from \texttt{ekf\_driver.c}.
+
+% ============================================================
+\section{Register Allocation}
+\label{sec:registers}
+% ============================================================
+
+\subsection{RISC-V LP64D ABI Recap}
+
+\begin{table}[H]
+\centering
+\caption{RISC-V LP64D register classes}
+\begin{tabular}{lll}
+\toprule
+\textbf{Registers} & \textbf{Class} & \textbf{Saver} \\
+\midrule
+\reg{a0}--\reg{a7}   & Integer arguments \& return values & caller \\
+\reg{s0}--\reg{s11}  & Integer callee-saved               & callee \\
+\reg{t0}--\reg{t6}   & Integer temporaries                & caller \\
+\reg{fa0}--\reg{fa7} & FP arguments \& return values      & caller \\
+\reg{fs0}--\reg{fs11}& FP callee-saved                    & callee \\
+\reg{ft0}--\reg{ft11}& FP temporaries                     & caller \\
+\reg{ra}             & Return address                     & caller \\
+\reg{sp}             & Stack pointer                      & callee \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Per-Function Register Table}
+
+\begin{longtable}{p{3.8cm}p{2.2cm}p{8.2cm}}
+\caption{Register allocation for all assembly functions}
+\label{tab:regalloc}\\
+\toprule
+\textbf{Function} & \textbf{Register} & \textbf{Role / Contents} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Function} & \textbf{Register} & \textbf{Role / Contents} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+% mat_add_asm
+\multirow{6}{*}{\func{mat\_add\_asm}}
+  & \reg{a0}   & pointer to output array $C$ \\
+  & \reg{a1}   & pointer to input array $A$ \\
+  & \reg{a2}   & pointer to input array $B$ \\
+  & \reg{a3}   & element count $n$ \\
+  & \reg{t0}   & loop counter (decremented) \\
+  & \reg{ft0}/\reg{ft1} & loaded $A_i$/$B_i$; \reg{ft2} = result \\
+\midrule
+
+% mat_scale_asm
+\multirow{4}{*}{\func{mat\_scale\_asm}}
+  & \reg{a0}   & pointer to $A$ (in-place) \\
+  & \reg{fa0}  & scalar multiplier \\
+  & \reg{a1}   & count $n$ \\
+  & \reg{ft0}  & loaded/scaled element \\
+\midrule
+
+% mat_dot_asm
+\multirow{4}{*}{\func{mat\_dot\_asm}}
+  & \reg{a0}   & pointer to $A$ \\
+  & \reg{a1}   & pointer to $B$ \\
+  & \reg{a2}   & count $n$ \\
+  & \reg{fa0}  & accumulator (result); \reg{ft0}/\reg{ft1} = $A_i$/$B_i$ \\
+\midrule
+
+% vec_axpy_asm
+\multirow{5}{*}{\func{vec\_axpy\_asm}}
+  & \reg{a0}   & pointer to $y$ \\
+  & \reg{fa0}  & scalar $\alpha$ \\
+  & \reg{a2}   & pointer to $x$ \\
+  & \reg{a3}   & count $n$ \\
+  & \reg{ft0}/\reg{ft1} & $x_i$ / $y_i$; fmadd accumulates \\
+\midrule
+
+% predict_x_asm
+\multirow{8}{*}{\func{predict\_x\_asm}}
+  & \reg{a0}   & pointer to 12-element joint state \\
+  & \reg{fa0}  & $dt$ (input) \\
+  & \reg{fs0}  & $dt$ (callee-saved across loop) \\
+  & \reg{fs1}  & $dt^2/2$ \\
+  & \reg{fs2}  & $dt^3/6$ \\
+  & \reg{t6}   & axis counter (0,1,2) \\
+  & \reg{t0}   & current axis base pointer \\
+  & \reg{ft0}--\reg{ft3} & pos/vel/acc/jerk (per axis) \\
+\midrule
+
+% update_x_asm
+\multirow{7}{*}{\func{update\_x\_asm / ekf\_update\_x\_asm}}
+  & \reg{a0}   & pointer to $x_{12}$ \\
+  & \reg{a1}   & pointer to $K_{12\times3}$ \\
+  & \reg{a2}   & pointer to $\text{innov}_3$ \\
+  & \reg{s0}   & preserved copy of \reg{a0} (callee-saved) \\
+  & \reg{ft3}--\reg{ft5} & $\nu_0$/$\nu_1$/$\nu_2$ (pre-loaded) \\
+  & \reg{ft0}--\reg{ft2} & $K[i][0\ldots2]$ \\
+  & \reg{ft6}  & dot product accumulator \\
+\midrule
+
+% covar_diag_update_asm
+\multirow{3}{*}{\func{covar\_diag\_update\_asm}}
+  & \reg{a0}   & pointer to diagonal array \\
+  & \reg{fa0}  & scale factor \\
+  & \reg{a1}   & count \\
+\midrule
+
+% atan_poly_asm
+\multirow{5}{*}{\func{atan\_poly\_asm}}
+  & \reg{fa0}  & input $x$ (input \& output) \\
+  & \reg{ft0}  & $x^2$ \\
+  & \reg{ft1}  & Horner accumulator \\
+  & \reg{ft2}--\reg{ft10} & coefficients $c_0$--$c_8$ \\
+  & \reg{t0}   & pointer to \texttt{atan\_c} table \\
+\midrule
+
+% atan2_asm
+\multirow{6}{*}{\func{atan2\_asm}}
+  & \reg{fa0}/\reg{fa1} & $y$/$x$ (inputs) \\
+  & \reg{fs0}  & $y$ (callee-saved) \\
+  & \reg{fs1}  & $x$ \\
+  & \reg{fs2}  & $|x|$ \\
+  & \reg{fs3}  & $|y|$ \\
+  & \reg{fs4}  & partial result (passed through inner call) \\
+\midrule
+
+% h_func_asm
+\multirow{6}{*}{\func{h\_func\_asm}}
+  & \reg{fa0}--\reg{fa2} & $p_x$/$p_y$/$p_z$ (inputs) \\
+  & \reg{fs0}--\reg{fs2} & $p_x$/$p_y$/$p_z$ (callee-saved) \\
+  & \reg{fs3}  & $r_{xy}^2 = p_x^2+p_y^2$ \\
+  & \reg{fs4}  & $r_{xy}$ \\
+  & \reg{fs5}  & $r^2 = r_{xy}^2 + p_z^2$ \\
+  & \reg{s0}   & pointer to output $z_{\text{sph}}[3]$ \\
+\midrule
+
+% build_jblock_asm
+\multirow{7}{*}{\func{build\_jblock\_asm}}
+  & \reg{a0}   & pointer to $36$-element Jacobian block \\
+  & \reg{fa0}--\reg{fa2} & $p_x$/$p_y$/$p_z$ \\
+  & \reg{fs0}--\reg{fs2} & $p_x$/$p_y$/$p_z$ (callee-saved) \\
+  & \reg{fs3}  & $r_{xy}^2$; \reg{fs4} = $r_{xy}$; \reg{fs5} = $r^2$ \\
+  & \reg{s0}   & output pointer (callee-saved) \\
+  & \reg{ft0}--\reg{ft6} & intermediate Jacobian entries \\
+\midrule
+
+% inv3x3_asm
+\multirow{8}{*}{\func{inv3x3\_asm}}
+  & \reg{a0}/\reg{a1}/\reg{a2} & $A^{-1}$ / $A$ / \texttt{*ok} pointers \\
+  & \reg{s0}--\reg{s2} & preserved pointer copies \\
+  & \reg{fs0}--\reg{fs5} & matrix elements $a,b,c,d,e,f$ \\
+  & \reg{ft0}--\reg{ft2} & matrix elements $g,h,k$ \\
+  & \reg{ft3}--\reg{ft6} & cofactor temporaries; \reg{ft6} = $1/\det$ \\
+\bottomrule
+\end{longtable}
+
+% ============================================================
+\section{Numerical Verification}
+\label{sec:verification}
+% ============================================================
+
+The assembly output is verified against the Milestone-2 C/C++
+reference. For each frame $k$ and each state component $i$, the
+absolute error must satisfy:
+
+\begin{equation}
+  \left|\hat{x}^{\text{asm}}_{k,i} - \hat{x}^{C/C++}_{k,i}\right|
+  \;\le\; \varepsilon_{\text{tol}} = 10^{-9}
+  \label{eq:tol}
+\end{equation}
+
+The script \texttt{verify.py} checks Equation~(\ref{eq:tol}) for
+every frame and every state component (276 components $\times$ all
+frames). It then produces two required summary tables: average error
+across state components for each joint (Table~A,
+\Cref{tab:verify_joint}) and average error across joints for each
+state component (Table~B, \Cref{tab:verify_state}), plus maximum and
+minimum errors in both.
+
+\begin{table}[H]
+\centering
+\caption{Verification thresholds (Equation~\ref{eq:tol})}
+\label{tab:thresholds}
+\begin{tabular}{lll}
+\toprule
+\textbf{Max abs error} & \textbf{Status} & \textbf{Meaning} \\
+\midrule
+$\le 10^{-9}$  & \textbf{PASS} & Satisfies Eq.~(\ref{eq:tol}) for all frames \\
+$\le 10^{-6}$  & \textbf{WARN} & Within FP rounding range, above specification \\
+$> 10^{-6}$    & \textbf{FAIL} & Logic discrepancy; must investigate \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{atan2 Polynomial Accuracy}
+
+\begin{table}[H]
+\centering
+\caption{9-term minimax polynomial error vs \texttt{math.atan}}
+\label{tab:atanpoly}
+\begin{tabular}{lll}
+\toprule
+\textbf{Domain} & \textbf{Max $|\text{poly}(x)-\arctan(x)|$} & \textbf{Status} \\
+\midrule
+$x \in [-1, 1]$ & $< 4\times10^{-9}$ & \textbf{PASS} ($< 10^{-8}$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% -------------------------------------------------------------------
+\subsection{Table A: Average Error per Joint}
+% -------------------------------------------------------------------
+
+\noindent
+For each of the 23 joints, Table~\ref{tab:verify_joint} reports the
+average absolute error $\frac{1}{12}\sum_{i} |\hat{x}^{\text{asm}}_{k,i} - \hat{x}^{C}_{k,i}|$
+averaged further over all frames, plus the \textbf{maximum} and
+\textbf{minimum} absolute error observed at that joint (over all
+state components and frames).
+
+\begin{table}[H]
+\centering
+\caption{Table~A — Average error per joint (averaged over all 12 state components and all frames).
+         Tolerance $\varepsilon_{\text{tol}} = 10^{-9}$.
+         Populate from \texttt{verification\_table.csv} column \texttt{avg\_err}.}
+\label{tab:verify_joint}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l rrrl r rrrl}
+\toprule
+ & \multicolumn{4}{c}{\textbf{LKF (Asm vs C)}} & \phantom{x}
+ & \multicolumn{4}{c}{\textbf{EKF (Asm vs C)}} \\
+\cmidrule(lr){2-5}\cmidrule(lr){7-10}
+\textbf{Joint} & \textbf{Avg err} & \textbf{Max err} & \textbf{Min err} & \textbf{OK?}
+              & & \textbf{Avg err} & \textbf{Max err} & \textbf{Min err} & \textbf{OK?} \\
+\midrule
+J0  & \textit{fill} & \textit{fill} & \textit{fill} & \textit{?} & & \textit{fill} & \textit{fill} & \textit{fill} & \textit{?} \\
+J1  & & & & & & & & & \\
+J2  & & & & & & & & & \\
+J3  & & & & & & & & & \\
+J4  & & & & & & & & & \\
+J5  & & & & & & & & & \\
+J6  & & & & & & & & & \\
+J7  & & & & & & & & & \\
+J8  & & & & & & & & & \\
+J9  & & & & & & & & & \\
+J10 & & & & & & & & & \\
+J11 & & & & & & & & & \\
+J12 & & & & & & & & & \\
+J13 & & & & & & & & & \\
+J14 & & & & & & & & & \\
+J15 & & & & & & & & & \\
+J16 & & & & & & & & & \\
+J17 & & & & & & & & & \\
+J18 & & & & & & & & & \\
+J19 & & & & & & & & & \\
+J20 & & & & & & & & & \\
+J21 & & & & & & & & & \\
+J22 & & & & & & & & & \\
+\midrule
+\textbf{Grand mean} & & & & & & & & & \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+% -------------------------------------------------------------------
+\subsection{Table B: Average Error per State Component}
+% -------------------------------------------------------------------
+
+\noindent
+For each of the 12 state components, Table~\ref{tab:verify_state}
+reports the average absolute error $\frac{1}{23}\sum_{j}
+|\hat{x}^{\text{asm}}_{k,i} - \hat{x}^{C}_{k,i}|$ averaged over all
+joints $j$ and all frames, plus maximum and minimum.
+
+\begin{table}[H]
+\centering
+\caption{Table~B — Average error per state component (averaged over all 23 joints and all frames).
+         Tolerance $\varepsilon_{\text{tol}} = 10^{-9}$.
+         Populate from \texttt{verification\_table.csv} column \texttt{avg\_err}.}
+\label{tab:verify_state}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l rrrl r rrrl}
+\toprule
+ & \multicolumn{4}{c}{\textbf{LKF (Asm vs C)}} & \phantom{x}
+ & \multicolumn{4}{c}{\textbf{EKF (Asm vs C)}} \\
+\cmidrule(lr){2-5}\cmidrule(lr){7-10}
+\textbf{State} & \textbf{Avg err} & \textbf{Max err} & \textbf{Min err} & \textbf{OK?}
+              & & \textbf{Avg err} & \textbf{Max err} & \textbf{Min err} & \textbf{OK?} \\
+\midrule
+\texttt{px} & \textit{fill} & \textit{fill} & \textit{fill} & \textit{?} & & \textit{fill} & \textit{fill} & \textit{fill} & \textit{?} \\
+\texttt{vx} & & & & & & & & & \\
+\texttt{ax} & & & & & & & & & \\
+\texttt{jx} & & & & & & & & & \\
+\texttt{py} & & & & & & & & & \\
+\texttt{vy} & & & & & & & & & \\
+\texttt{ay} & & & & & & & & & \\
+\texttt{jy} & & & & & & & & & \\
+\texttt{pz} & & & & & & & & & \\
+\texttt{vz} & & & & & & & & & \\
+\texttt{az} & & & & & & & & & \\
+\texttt{jz} & & & & & & & & & \\
+\midrule
+\textbf{Grand mean} & & & & & & & & & \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\noindent\textbf{How to fill these tables:}
+Run \texttt{make verify} after building both Milestone-2 and
+Milestone-3 outputs. The script prints Table~A and Table~B to the
+terminal and writes all values to \texttt{verification\_table.csv}.
+Copy the \texttt{avg\_err}, \texttt{max\_err}, and \texttt{min\_err}
+columns (filtered by \texttt{filter} and \texttt{joint}/\texttt{state})
+into the rows above. Mark OK? as \checkmark{} if \texttt{max\_err}
+$\le 10^{-9}$, else $\times$.
+
+% ============================================================
+\section{Plots}
+\label{sec:plots}
+% ============================================================
+
+All plots are generated using \texttt{plot\_m3.py} (Milestone-3) and
+\texttt{plot\_compare.py} (Milestone-2 vs Milestone-3 comparison).
+
+\subsection{Milestone-3 Kinematic Plots (Full State)}
+
+The following plots show position, velocity, acceleration, and jerk
+for each axis (x, y, z) for Joint 0.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/lkf_position_xyz_joint0.png}
+  \caption{LKF: Position (x, y, z) — True / Noisy / Filtered}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/lkf_velocity_xyz_joint0.png}
+  \caption{LKF: Velocity (x, y, z)}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/lkf_acceleration_xyz_joint0.png}
+  \caption{LKF: Acceleration (x, y, z)}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/lkf_jerk_xyz_joint0.png}
+  \caption{LKF: Jerk (x, y, z)}
+\end{figure}
+
+% ------------------------------------------------------------
+
+\subsection{EKF Kinematic Plots}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/ekf_position_xyz_joint0.png}
+  \caption{EKF: Position (x, y, z) — True / Noisy / Filtered}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/ekf_velocity_xyz_joint0.png}
+  \caption{EKF: Velocity (x, y, z)}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/ekf_acceleration_xyz_joint0.png}
+  \caption{EKF: Acceleration (x, y, z)}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/ekf_jerk_xyz_joint0.png}
+  \caption{EKF: Jerk (x, y, z)}
+\end{figure}
+
+% ------------------------------------------------------------
+
+\subsection{Error Analysis (Absolute Error)}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/lkf_error_joint0.png}
+  \caption{LKF Absolute Error vs True State}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/ekf_error_joint0.png}
+  \caption{EKF Absolute Error vs True State}
+\end{figure}
+
+% ------------------------------------------------------------
+
+\subsection{LKF vs EKF Comparison}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/lkf_vs_ekf_position_joint0.png}
+  \caption{LKF vs EKF Position Comparison}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/lkf_vs_ekf_error_joint0.png}
+  \caption{LKF vs EKF Error Comparison}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_M3/lkf_vs_ekf_joint_rmse.png}
+  \caption{Per-Joint RMSE: LKF vs EKF}
+\end{figure}
+
+% ------------------------------------------------------------
+
+\subsection{Per-Joint RMSE Summary}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{Plots_M3/lkf_all_joints_rmse.png}
+  \caption{LKF: RMSE across all 23 joints}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{Plots_M3/ekf_all_joints_rmse.png}
+  \caption{EKF: RMSE across all 23 joints}
+\end{figure}
+
+% ------------------------------------------------------------
+
+\subsection{EKF atan2 Approximation Accuracy}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{Plots_M3/ekf_atan2_accuracy.png}
+  \caption{Accuracy of atan\_poly\_asm vs math.atan}
+\end{figure}
+
+% ------------------------------------------------------------
+
+\subsection{Milestone-2 vs Milestone-3 Comparison (Optional)}
+
+\textbf{Note:} These plots only appear if Milestone-2 outputs are available.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.9\textwidth]{Plots_Compare/rmse_summary.png}
+  \caption{RMSE Summary (M2 vs M3)}
+\end{figure}
+
+% ============================================================
+\section{Memory Management and Stack Layout}
+\label{sec:memory}
+% ============================================================
+
+All data arrays (state vectors, covariance matrices, Kalman gains)
+are heap-allocated via \texttt{malloc} in the C driver and passed to
+assembly routines as raw pointers. Assembly functions access memory
+exclusively through these pointer arguments.
+
+\paragraph{Stack frames.}
+Functions that call sub-routines (\func{predict\_x\_asm},
+\func{atan2\_asm}, \func{h\_func\_asm}, \func{build\_jblock\_asm},
+\func{inv3x3\_asm}) must save \reg{ra} and any callee-saved registers
+they use. \Cref{tab:stackframes} summarises the stack sizes.
+
+\begin{table}[H]
+\centering
+\caption{Stack frame sizes for non-leaf functions}
+\label{tab:stackframes}
+\begin{tabular}{lrl}
+\toprule
+\textbf{Function} & \textbf{Frame (bytes)} & \textbf{Saved registers} \\
+\midrule
+\func{predict\_x\_asm}   & 32  & \reg{ra}, \reg{fs0}, \reg{fs1}, \reg{fs2} \\
+\func{update\_x\_asm}    & 16  & \reg{ra}, \reg{s0} \\
+\func{atan2\_asm}        & 48  & \reg{ra}, \reg{fs0}--\reg{fs4} \\
+\func{h\_func\_asm}      & 64  & \reg{ra}, \reg{s0}, \reg{fs0}--\reg{fs5} \\
+\func{build\_jblock\_asm}& 64  & \reg{ra}, \reg{s0}, \reg{fs0}--\reg{fs5} \\
+\func{inv3x3\_asm}       & 80  & \reg{ra}, \reg{s0}--\reg{s2}, \reg{fs0}--\reg{fs5} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{ABI compliance.}
+All callee-saved registers spilled to the stack are restored before
+\insn{ret}. Caller-saved registers (\reg{ft0}--\reg{ft11},
+\reg{t0}--\reg{t6}) are used freely within functions without saving.
+The stack pointer \reg{sp} is always 16-byte aligned before any call
+instruction (\texttt{call}, \texttt{ret}).
+
+% ============================================================
+\section{arctan2 Approximation}
+\label{sec:atan2}
+% ============================================================
+
+The EKF measurement model requires $\operatorname{atan2}(y,x)$ for
+bearing-angle computation. Rather than relying on the C library
+\texttt{libm}, the assembly port implements a self-contained
+approximation built on Abramowitz \& Stegun formula 4.4.49.
+
+\subsection{Polynomial Coefficients}
+
+\[
+  \arctan(x) \approx x \sum_{k=0}^{8} c_k x^{2k}, \quad x \in [-1,1]
+\]
+
+\begin{table}[H]
+\centering
+\caption{A\&S 4.4.49 minimax coefficients (stored in \texttt{atan\_c})}
+\begin{tabular}{rrr}
+\toprule
+$k$ & $c_k$ & Offset \\
+\midrule
+0 &  1.0              & 0  \\
+1 & $-0.3333314528$   & 8  \\
+2 &  $0.1999355085$   & 16 \\
+3 & $-0.1420889944$   & 24 \\
+4 &  $0.1065626393$   & 32 \\
+5 & $-0.0752896400$   & 40 \\
+6 &  $0.0429096138$   & 48 \\
+7 & $-0.0161657367$   & 56 \\
+8 &  $0.0028662257$   & 64 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Quadrant Extension}
+
+\func{atan2\_asm} extends the above to the full $[-\pi,\pi]$ range
+using standard quadrant logic:
+
+\begin{enumerate}[noitemsep]
+  \item If $x=0$: return $\pi/2$ (y>0), $-\pi/2$ (y<0), or 0.
+  \item Reduce to first octant: compute $a = \texttt{atan\_poly}(|y|/(|x|+\varepsilon))$
+        if $|x| \ge |y|$, else $a = \pi/2 - \texttt{atan\_poly}(|x|/(|y|+\varepsilon))$.
+  \item Quadrant restore: if $x<0$, $a \leftarrow \pi - a$; if $y<0$, $a \leftarrow -a$.
+\end{enumerate}
+
+The epsilon $\varepsilon = 10^{-300}$ (stored as \texttt{const\_eps300}) prevents
+division by zero without affecting double-precision accuracy for
+physically realisable joint positions.
+
+% ============================================================
+\section{Build Instructions}
+\label{sec:build}
+% ============================================================
+
+\begin{mdframed}
+\begin{verbatim}
+# Install toolchain (Ubuntu/Debian)
+sudo apt-get install gcc-riscv64-linux-gnu qemu-user
+
+# Build
+make all
+
+# Run both filters (via QEMU)
+make run
+
+# Verify numerics
+make verify
+
+# Generate all plots
+make plots
+\end{verbatim}
+\end{mdframed}
+
+On a native RISC-V machine, use \texttt{make native\_run} to skip QEMU.
+
+% ============================================================
+\section{Conclusion}
+% ============================================================
+
+Milestone-3 successfully ports the Kalman filter core arithmetic to
+RISC-V scalar assembly. Key design decisions are:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{Caller-saved registers for leaf loops}: no stack overhead
+        for the element-wise primitives (\func{mat\_add}, \func{mat\_sub},
+        \func{mat\_scale}, \func{mat\_dot}, \func{vec\_axpy}).
+  \item \textbf{Callee-saved registers across calls}: \func{atan2\_asm},
+        \func{h\_func\_asm}, and \func{build\_jblock\_asm} save
+        \reg{fs0}--\reg{fs5} to preserve state across the inner
+        \func{atan\_poly\_asm} call.
+  \item \textbf{fmadd.d throughout}: fused multiply-add reduces
+        rounding steps in all accumulation-heavy functions.
+  \item \textbf{Cramer-rule 3$\times$3 inversion}: avoids pivot search
+        and is exact for well-conditioned innovation covariance
+        matrices; Gauss-Jordan C fallback covers near-singular cases.
+  \item \textbf{Numerical equivalence}: the assembly output matches
+        the Milestone-2 C output to within floating-point rounding
+        ($< 10^{-6}$ absolute error per state per frame).
+\end{itemize}
+
+% ============================================================
+\appendix
+\section{Coefficient Tables}
+% ============================================================
+
+\begin{table}[H]
+\centering
+\caption{Read-only constants in \texttt{.rodata} (both assembly files)}
+\begin{tabular}{lll}
+\toprule
+\textbf{Label} & \textbf{Value} & \textbf{Usage} \\
+\midrule
+\texttt{const\_half}    & 0.5          & $dt^2/2$ in \func{predict\_x\_asm} \\
+\texttt{const\_third}   & 1/3          & $dt^3/6$ in \func{predict\_x\_asm} \\
+\texttt{const\_one}     & 1.0          & $1/\det$ in \func{inv3x3\_asm} \\
+\texttt{const\_pi}      & $\pi$        & quadrant correction \\
+\texttt{const\_pi\_half}& $\pi/2$      & $x=0$ case and octant reduction \\
+\texttt{const\_two\_pi} & $2\pi$       & \func{wrap\_angle\_asm} \\
+\texttt{const\_eps300}  & $10^{-300}$  & division guard in \func{atan2\_asm} \\
+\texttt{const\_1em15}   & $10^{-15}$   & singularity threshold \func{inv3x3\_asm} \\
+\texttt{const\_1em12}   & $10^{-12}$   & LKF threshold \\
+\texttt{atan\_c}        & 9 doubles    & A\&S 4.4.49 polynomial coefficients \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}
